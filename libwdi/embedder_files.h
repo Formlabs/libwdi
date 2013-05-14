@@ -45,11 +45,11 @@ struct emb embeddable_fixed[] = {
 #if defined(DDK_DIR)
 #	if defined(OPT_M32)
 		{ 0, DDK_DIR "\\redist\\wdf\\x86\\WdfCoInstaller0" STR(WDF_VER) ".dll", "x86" },
-		{ 0, DDK_DIR "\\redist\\" COINSTALLER_DIR "\\x86\\winusbcoinstaller2.dll", "x86" },
+		{ 0, DDK_DIR "\\redist\\winusb\\x86\\winusbcoinstaller2.dll", "x86" },
 #	endif	// OPT_M32
 #	if defined(OPT_M64)
-		{ 0, DDK_DIR "\\redist\\wdf\\" X64_DIR "\\WdfCoInstaller0" STR(WDF_VER) ".dll", "amd64" },
-		{ 0, DDK_DIR "\\redist\\" COINSTALLER_DIR "\\" X64_DIR "\\winusbcoinstaller2.dll", "amd64" },
+		{ 0, DDK_DIR "\\redist\\wdf\\amd64\\WdfCoInstaller0" STR(WDF_VER) ".dll", "amd64" },
+		{ 0, DDK_DIR "\\redist\\winusb\\amd64\\winusbcoinstaller2.dll", "amd64" },
 #	endif	// OPT_M64
 #	if defined(OPT_IA64)
 		{ 0, DDK_DIR "\\redist\\wdf\\ia64\\WdfCoInstaller0" STR(WDF_VER) ".dll", "ia64" },

@@ -46,7 +46,7 @@ static const char* progress_message[] = {
 	"If so, please watch for additional popup windows.",	// 1 min
 	"The reason driver installation may take time...",
 	"...is because a System Restore point is created.",
-	"Microsoft offers no means of checking progress...",
+	"We have no means of checking installation progress...",
 	"...so we can't say how long it'll take...",			// 2 mins
 	"Please continue to be patient...",
 	"There's a 5 minutes timeout enventually...",

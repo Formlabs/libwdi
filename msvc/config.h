@@ -16,7 +16,7 @@
  * match your WinUSB redist directrories
  */
 #ifndef DDK_DIR
-#define DDK_DIR "C:/Program Files (x86)/Windows Kits/8.0"
+#define DDK_DIR "C:/WinDDK/7600.16385.1"
 #endif
 
 /* DDK WDF coinstaller version */
@@ -30,12 +30,12 @@
 
 /* embed libusb0 driver files from the following location */
 #ifndef LIBUSB0_DIR
-#define LIBUSB0_DIR "D:/libusb-win32"
+// #define LIBUSB0_DIR "D:/libusb-win32"
 #endif
 
 /* embed libusbK driver files from the following location */
 #ifndef LIBUSBK_DIR
-#define LIBUSBK_DIR "D:/libusbK/bin"
+#define LIBUSBK_DIR "../libusbk/bin/"
 #endif
 
 /* embed user defined driver files from the following location */
@@ -56,7 +56,7 @@
 //#define ENABLE_DEBUG_LOGGING
 
 /* Debug message logging (toggable) */
-#define INCLUDE_DEBUG_LOGGING
+#define INCLUDE_DEBUG_LOGGING 1
 
 /* Message logging */
 #define ENABLE_LOGGING 1

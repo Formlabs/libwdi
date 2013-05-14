@@ -105,6 +105,7 @@ void plog_v(const char *format, va_list args)
 		size = STR_BUFFER_SIZE-2;
 	}
 	WriteFile(pipe_handle, buffer, (DWORD)size+2, &junk, NULL);
+        FlushFileBuffers(pipe_handle);
 }
 
 void plog(const char *format, ...)
@@ -247,6 +248,7 @@ int enumerate_device(char* device_id)
 	}
 
 	plog("re-enumeration succeeded...");
+        plog("foobar");
 	return 0;
 }
 
@@ -770,7 +772,7 @@ int __cdecl main(int argc_ansi, char** argv_ansi)
 		send_status(IC_SET_TIMEOUT_DEFAULT);
 		if (b == true) {
 			// Success
-			plog("driver update completed");
+			plog("driver update completed foobar foobar");
 			enumerate_device(device_id);
 			ret = WDI_SUCCESS;
 			goto out;
@@ -805,7 +807,11 @@ int __cdecl main(int argc_ansi, char** argv_ansi)
 
 out:
 	// Report any error status code and wait for target app to read it
+        plog("foobar");
+        plog("hello");
 	send_status(IC_INSTALLER_COMPLETED);
+        plog("foobar");
+        plog("hello");
 	pstat(ret);
 	// Restore the system restore point creation original settings
 	disable_system_restore(false);
@@ -821,6 +827,8 @@ out:
 	CloseHandle(syslog_ready_event);
 	CloseHandle(syslog_terminate_event);
 	CloseHandle((HANDLE)syslog_reader_thid);
+        plog("close pipe_handle");
 	CloseHandle(pipe_handle);
+        plog("close after pipe handle");
 	return ret;
 }

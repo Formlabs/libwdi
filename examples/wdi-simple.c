@@ -40,9 +40,9 @@
  * Change these values according to your device if
  * you don't want to provide parameters
  */
-#define DESC        "Microsoft XBox Controller Type S"
-#define VID         0x045E
-#define PID         0x0289
+#define DESC        "Form1"
+#define VID         0x16d0
+#define PID         0x07eb
 #define INF_NAME    "usb_device.inf"
 #define DEFAULT_DIR "usb_driver"
 
