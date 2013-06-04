@@ -1652,11 +1652,12 @@ static int install_driver_internal(void* arglist)
 		} else {
 			switch(GetLastError()) {
 			case ERROR_BROKEN_PIPE:
-				// The pipe has been ended - wait for installer to finish
-				if ((WaitForSingleObject(handle[1], timeout) == WAIT_TIMEOUT)) {
+                          // workaround for hanging winxp install
 					TerminateProcess(handle[1], 0);
-				}
-				r = check_completion(handle[1]); goto out;
+                          r = check_completion(handle[1]);
+                          Sleep(1000);
+                          r = WDI_SUCCESS;
+                          goto out;
 			case ERROR_PIPE_LISTENING:
 				// Wait for installer to open the pipe
 				Sleep(100);
@@ -1672,10 +1673,11 @@ static int install_driver_internal(void* arglist)
 						switch(GetLastError()) {
 						case ERROR_BROKEN_PIPE:
 							// The pipe has been ended - wait for installer to finish
-							if ((WaitForSingleObject(handle[1], timeout) == WAIT_TIMEOUT)) {
 								TerminateProcess(handle[1], 0);
-							}
-							r = check_completion(handle[1]); goto out;
+                            r = check_completion(handle[1]);
+                            Sleep(1000);
+                            r = WDI_SUCCESS;
+                            goto out;
 						case ERROR_MORE_DATA:
 							bufsize *= 2;
 							wdi_dbg("message overflow (async) - increasing buffer size to %d bytes", bufsize);
