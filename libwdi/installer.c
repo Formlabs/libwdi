@@ -828,6 +828,7 @@ out:
 	CloseHandle(syslog_terminate_event);
 	CloseHandle((HANDLE)syslog_reader_thid);
         plog("close pipe_handle");
+        FlushFileBuffers(pipe_handle);
 	CloseHandle(pipe_handle);
         plog("close after pipe handle");
 	return ret;

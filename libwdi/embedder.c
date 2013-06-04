@@ -343,7 +343,7 @@ main (int argc, char *argv[])
 	add_user_files();
 #endif
 	// Check if any of the embedded files have changed
-	rebuild = 0;
+	rebuild = 1;
 	if (NATIVE_STAT(argv[1], &stbuf) == 0) {
 		header_time = stbuf.st_mtime;	// make sure to use modification time!
 		for (i=0; i<nb_embeddables; i++) {

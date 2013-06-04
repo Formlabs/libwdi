@@ -1653,7 +1653,7 @@ static int install_driver_internal(void* arglist)
 			switch(GetLastError()) {
 			case ERROR_BROKEN_PIPE:
                           // workaround for hanging winxp install
-					TerminateProcess(handle[1], 0);
+                          TerminateProcess(handle[1], 0);
                           r = check_completion(handle[1]);
                           Sleep(1000);
                           r = WDI_SUCCESS;
@@ -1672,8 +1672,8 @@ static int install_driver_internal(void* arglist)
 					} else {
 						switch(GetLastError()) {
 						case ERROR_BROKEN_PIPE:
-							// The pipe has been ended - wait for installer to finish
-								TerminateProcess(handle[1], 0);
+                            // The pipe has been ended - wait for installer to finish
+                            TerminateProcess(handle[1], 0);
                             r = check_completion(handle[1]);
                             Sleep(1000);
                             r = WDI_SUCCESS;
@@ -1697,12 +1697,12 @@ static int install_driver_internal(void* arglist)
 					}
 					break;
 				case WAIT_TIMEOUT:
-					// Lost contact
+                    // Lost contact
 					wdi_err("installer failed to respond - aborting");
 					TerminateProcess(handle[1], 0);
 					r = WDI_ERROR_TIMEOUT; goto out;
 				case WAIT_OBJECT_0+1:
-					// installer process terminated
+                    // installer process terminated
 					r = check_completion(handle[1]); goto out;
 				default:
 					wdi_err("could not read from pipe (wait): %s", windows_error_str(0));

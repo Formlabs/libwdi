@@ -59,6 +59,7 @@ struct emb embeddable_fixed[] = {
 
 // libusb0
 #if defined(LIBUSB0_DIR)
+                #error "libusb0"
 	{ 0, LIBUSB0_DIR "\\bin\\x86\\libusb0_x86.dll", "x86" },
 	{ 0, LIBUSB0_DIR "\\bin\\x86\\install-filter.exe", "x86" },
 #	if defined(LIBUSBK_DIR)
