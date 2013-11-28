@@ -1,6 +1,6 @@
 /*
  * Zadig: Automated Driver Installer for USB devices (GUI version)
- * Copyright (c) 2010-2012 Pete Batard <pete@akeo.ie>
+ * Copyright (c) 2010-2013 Pete Batard <pete@akeo.ie>
  * For more info, please visit http://libwdi.akeo.ie
  *
  * This program is free software: you can redistribute it and/or modify
@@ -72,9 +72,9 @@ HFONT hyperlink_font, bold_font;
 WNDPROC original_wndproc;
 COLORREF arrow_color = ARROW_GREEN;
 float fScale = 1.0f;
-extern enum windows_version windows_version;
+extern int windows_version;
 char app_dir[MAX_PATH], driver_text[64];
-char extraction_path[MAX_PATH] = DEFAULT_DIR;
+char extraction_path[MAX_PATH];
 const char* driver_display_name[WDI_NB_DRIVERS] = { "WinUSB", "libusb-win32", "libusbK", "Custom (extract only)" };
 const char* driver_name[WDI_NB_DRIVERS-1] = { "WinUSB", "libusb0", "libusbK" };
 struct wdi_options_create_list cl_options = { 0 };
@@ -99,6 +99,7 @@ bool installation_running = false;
 bool unknown_vid = false;
 bool has_filter_driver = false;
 bool use_arrow_icons = false;
+bool exit_on_success = false;
 enum wcid_state has_wcid = WCID_NONE;
 int wcid_type = WDI_USER;
 UINT64 target_driver_version = 0;
@@ -155,7 +156,7 @@ int display_devices(void)
 	_IGNORE(ComboBox_ResetContent(hDeviceList));
 
 	for (dev = list; dev != NULL; dev = dev->next) {
-		// Compute the width needed to accomodate our text
+		// Compute the width needed to accommodate our text
 		GetTextExtentPointU(hdc, dev->desc, &size);
 		max_width = max(max_width, size.cx);
 
@@ -264,6 +265,8 @@ int install_driver(void)
 
 		if (pd_options.use_wcid_driver) {
 			dev->desc = (char*)malloc(128);
+			if (dev->desc == NULL)
+				r = WDI_ERROR_RESOURCE; goto out;
 			safe_sprintf(dev->desc, 128, "%s Generic Device", driver_display_name[pd_options.driver_type]);
 		} else {
 			// Retrieve the various device parameters
@@ -320,7 +323,7 @@ int install_driver(void)
 	}
 	r = wdi_prepare_driver(dev, extraction_path, inf_name, &pd_options);
 	if (r == WDI_SUCCESS) {
-		dsprintf("Succesfully extracted driver files.");
+		dsprintf("Successfully extracted driver files.");
 		// Perform the install if not extracting the files only
 		if ((pd_options.driver_type != WDI_USER) && (!extract_only)) {
 			if ( (get_driver_type(dev) == DT_SYSTEM)
@@ -757,6 +760,121 @@ static __inline HMODULE GetDLLHandle(char* szDLLName)
 	return h;
 }
 
+static BOOL is_x64(void)
+{
+	BOOL ret = FALSE;
+	BOOL (__stdcall *pIsWow64Process)(HANDLE, PBOOL) = NULL;
+	// Detect if we're running a 32 or 64 bit system
+	if (sizeof(uintptr_t) < 8) {
+		pIsWow64Process = (BOOL (__stdcall *)(HANDLE, PBOOL))
+			GetProcAddress(GetModuleHandleA("KERNEL32"), "IsWow64Process");
+		if (pIsWow64Process != NULL) {
+			(*pIsWow64Process)(GetCurrentProcess(), &ret);
+		}
+	} else {
+		ret = TRUE;
+	}
+	return ret;
+}
+
+// From smartmontools os_win32.cpp
+static const char* PrintWindowsVersion(void)
+{
+	OSVERSIONINFOEXA vi, vi2;
+	const char* w = 0;
+	const char* w64 = "32 bit";
+	char* vptr;
+	size_t vlen;
+	unsigned major, minor;
+	ULONGLONG major_equal, minor_equal;
+	BOOL ws;
+	int nWindowsVersion;
+	static char WindowsVersionStr[128] = "Windows ";
+
+	nWindowsVersion = WINDOWS_UNDEFINED;
+	safe_strcpy(WindowsVersionStr, sizeof(WindowsVersionStr), "Windows Undefined");
+
+	memset(&vi, 0, sizeof(vi));
+	vi.dwOSVersionInfoSize = sizeof(vi);
+	if (!GetVersionExA((OSVERSIONINFOA *)&vi)) {
+		memset(&vi, 0, sizeof(vi));
+		vi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
+		if (!GetVersionExA((OSVERSIONINFOA *)&vi))
+			return WindowsVersionStr;
+	}
+
+	if (vi.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+
+		if (vi.dwMajorVersion > 6 || (vi.dwMajorVersion == 6 && vi.dwMinorVersion >= 2)) {
+			// Starting with Windows 8.1 Preview, GetVersionEx() does no longer report the actual OS version
+			// See: http://msdn.microsoft.com/en-us/library/windows/desktop/dn302074.aspx
+
+			major_equal = VerSetConditionMask(0, VER_MAJORVERSION, VER_EQUAL);
+			for (major = vi.dwMajorVersion; major <= 9; major++) {
+				memset(&vi2, 0, sizeof(vi2));
+				vi2.dwOSVersionInfoSize = sizeof(vi2); vi2.dwMajorVersion = major;
+				if (!VerifyVersionInfoA(&vi2, VER_MAJORVERSION, major_equal))
+					continue;
+				if (vi.dwMajorVersion < major) {
+					vi.dwMajorVersion = major; vi.dwMinorVersion = 0;
+				}
+
+				minor_equal = VerSetConditionMask(0, VER_MINORVERSION, VER_EQUAL);
+				for (minor = vi.dwMinorVersion; minor <= 9; minor++) {
+					memset(&vi2, 0, sizeof(vi2)); vi2.dwOSVersionInfoSize = sizeof(vi2);
+					vi2.dwMinorVersion = minor;
+					if (!VerifyVersionInfoA(&vi2, VER_MINORVERSION, minor_equal))
+						continue;
+					vi.dwMinorVersion = minor;
+					break;
+				}
+
+				break;
+			}
+		}
+
+		if (vi.dwMajorVersion <= 0xf && vi.dwMinorVersion <= 0xf) {
+			ws = (vi.wProductType <= VER_NT_WORKSTATION);
+			nWindowsVersion = vi.dwMajorVersion << 4 | vi.dwMinorVersion;
+			switch (nWindowsVersion) {
+			case 0x50: w = "2000";
+				break;
+			case 0x51: w = "XP";
+				break;
+			case 0x52: w = (!GetSystemMetrics(89)?"2003":"2003_R2");
+				break;
+			case 0x60: w = (ws?"Vista":"2008");
+				break;
+			case 0x61: w = (ws?"7":"2008_R2");
+				break;
+			case 0x62: w = (ws?"8":"2012");
+				break;
+			case 0x63: w = (ws?"8.1":"2012_R2");
+				break;
+			default:
+				nWindowsVersion = WINDOWS_UNSUPPORTED;
+				break;
+			}
+		}
+	}
+
+	if (is_x64())
+		w64 = "64-bit";
+
+	vptr = &WindowsVersionStr[sizeof("Windows ") - 1];
+	vlen = sizeof(WindowsVersionStr) - sizeof("Windows ") - 1;
+	if (!w)
+		safe_sprintf(vptr, vlen, "%s %u.%u %s", (vi.dwPlatformId==VER_PLATFORM_WIN32_NT?"NT":"??"),
+			(unsigned)vi.dwMajorVersion, (unsigned)vi.dwMinorVersion, w64);
+	else if (vi.wServicePackMinor)
+		safe_sprintf(vptr, vlen, "%s SP%u.%u %s", w, vi.wServicePackMajor, vi.wServicePackMinor, w64);
+	else if (vi.wServicePackMajor)
+		safe_sprintf(vptr, vlen, "%s SP%u %s", w, vi.wServicePackMajor, w64);
+	else
+		safe_sprintf(vptr, vlen, "%s %s", w, w64);
+	return WindowsVersionStr;
+}
+
 void init_dialog(HWND hDlg)
 {
 	int err;
@@ -794,6 +912,8 @@ void init_dialog(HWND hDlg)
 	ReleaseDC(hDlg, hdc);
 	i24 = (int)(24.0f*fScale);
 
+	// Set the title bar icon
+	set_title_bar_icon(hDlg);
 	// Create the status line
 	create_status_bar();
 	// Display the version in the right area of the status bar
@@ -930,6 +1050,8 @@ void init_dialog(HWND hDlg)
 	// Increase the size of our log textbox to MAX_LOG_SIZE (unsigned word)
 	PostMessage(hInfo, EM_LIMITTEXT, MAX_LOG_SIZE , 0);
 
+	dprintf(PrintWindowsVersion());
+
 	// Limit the input size of VID, PID, MI
 	PostMessage(GetDlgItem(hMain, IDC_VID), EM_SETLIMITTEXT, 4, 0);
 	PostMessage(GetDlgItem(hMain, IDC_PID), EM_SETLIMITTEXT, 4, 0);
@@ -978,6 +1100,7 @@ bool parse_ini(void) {
 
 	// Set the various boolean options
 	profile_get_boolean(profile, "general", "advanced_mode", NULL, false, &advanced_mode);
+	profile_get_boolean(profile, "general", "exit_on_success", NULL, false, &exit_on_success);
 	profile_get_boolean(profile, "device", "list_all", NULL, false, &cl_options.list_all);
 	profile_get_boolean(profile, "device", "include_hubs", NULL, false, &cl_options.list_hubs);
 	profile_get_boolean(profile, "driver", "extract_only", NULL, false, &extract_only);
@@ -1530,6 +1653,9 @@ INT_PTR CALLBACK main_callback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 				if (!extract_only) {
 					dsprintf("Driver Installation: SUCCESS");
 					notification(MSG_INFO, "The driver was installed successfully.", "Driver Installation");
+					if(exit_on_success){
+						exit(0);
+					}
 				}
 			} else if (r == WDI_ERROR_USER_CANCEL) {
 				dsprintf("Driver Installation: Cancelled by User");
@@ -1656,7 +1782,11 @@ INT_PTR CALLBACK main_callback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 /*
  * Application Entrypoint
  */
+#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
+#else
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+#endif
 {
 	HANDLE mutex = NULL;
 	HWND hDlg = NULL;
@@ -1666,7 +1796,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	 * to access the actual "System32" as "SysWOW64" gets remapped to "System32"
 	 */
 	const char* system_dir[] = { "System32", "SysWOW64", "Sysnative" };
-	char* libusb_path;
+	char *libusb_path, *tmp;
 	int i;
 	bool r;
 
@@ -1681,16 +1811,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	}
 
 	// Set the Windows version
-	detect_windows_version();
+	windows_version = detect_windows_version();
 
 	// Save instance of the application for further reference
 	main_instance = hInstance;
 
 	// Initialize COM for folder selection
-	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	IGNORE_RETVAL(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED));
 
-	// Retrieve the current application directory
+	// Retrieve the current application directory and set the extraction directory from the user's
 	GetCurrentDirectoryU(MAX_PATH, app_dir);
+	tmp = getenvU("USERPROFILE");
+	safe_sprintf(extraction_path, sizeof(extraction_path), "%s\\usb_driver", tmp);
+	safe_free(tmp);
 
 	// Create the main Window
 	if ( (hDlg = CreateDialogA(hInstance, "MAIN_DIALOG", NULL, main_callback)) == NULL ) {

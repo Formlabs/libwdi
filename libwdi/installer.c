@@ -1,6 +1,6 @@
 /*
  * Library for WinUSB/libusb automated driver installation
- * Copyright (c) 2010 Pete Batard <pbatard@gmail.com>
+ * Copyright (c) 2010-2013 Pete Batard <pete@akeo.ie>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -365,7 +365,7 @@ static __inline char* xlocale_to_utf8(const char* str)
 
 /*
  * Send individual lines of the syslog section pointed by buffer back to the main application
- * xbuffer's payload MUST start at byte 1 to accomodate the SYSLOG_MESSAGE prefix
+ * xbuffer's payload MUST start at byte 1 to accommodate the SYSLOG_MESSAGE prefix
  */
 DWORD process_syslog(char* buffer, DWORD size)
 {
@@ -714,7 +714,7 @@ int __cdecl main(int argc_ansi, char** argv_ansi)
 	}
 
 	// Initialize COM for Restore Point disabling
-	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	IGNORE_RETVAL(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED));
 
 	// libwdi provides the arguments as UTF-16 => read them and convert to UTF-8
 	if (__wgetmainargs != NULL) {

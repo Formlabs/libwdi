@@ -1,6 +1,6 @@
 /*
  * Zadig: Automated Driver Installer for USB devices (GUI version)
- * Copyright (c) 2010-2012 Pete Batard <pete@akeo.ie>
+ * Copyright (c) 2010-2013 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,7 +34,6 @@
 #define NOTIFICATION_DELAY          1000
 #define MAX_TOOLTIPS                32
 #define MAX_LOG_SIZE                0x7FFFFFFE
-#define DEFAULT_DIR                 "C:\\usb_driver"
 #define INI_NAME                    "zadig.ini"
 #define LIBWDI_URL                  "http://libwdi.akeo.ie"
 #define LIBUSBX_URL                 "https://github.com/libusbx/libusbx/wiki/Windows-Backend"
@@ -54,7 +53,7 @@
 #define FIELD_ORANGE                RGB(255,240,200)
 #define ARROW_GREEN                 RGB(92,228,65)
 #define ARROW_ORANGE                RGB(253,143,56)
-#define APP_VERSION                 "Zadig v2.0.1.160"
+#define APP_VERSION                 "Zadig v2.0.1.162"
 
 // These are used to flag end users about the driver they are going to replace
 enum driver_type {
@@ -80,15 +79,16 @@ enum user_message_type {
 };
 
 // Windows versions
-enum windows_version {
-	WINDOWS_UNDEFINED,
-	WINDOWS_UNSUPPORTED,
-	WINDOWS_2K,
-	WINDOWS_XP,
-	WINDOWS_2003_XP64,
-	WINDOWS_VISTA,
-	WINDOWS_7,
-	WINDOWS_8
+enum WindowsVersion {
+	WINDOWS_UNDEFINED = -1,
+	WINDOWS_UNSUPPORTED = 0,
+	WINDOWS_XP = 0x51,
+	WINDOWS_2003 = 0x52,	// Also XP x64
+	WINDOWS_VISTA = 0x60,
+	WINDOWS_7 = 0x61,
+	WINDOWS_8 = 0x62,
+	WINDOWS_8_1_OR_LATER = 0x63,
+	WINDOWS_MAX
 };
 
 // WCID states
@@ -109,10 +109,11 @@ enum wcid_state {
 #define safe_stricmp(str1, str2) _stricmp(((str1==NULL)?"<NULL>":str1), ((str2==NULL)?"<NULL>":str2))
 #define safe_strncmp(str1, str2, count) strncmp(((str1==NULL)?"<NULL>":str1), ((str2==NULL)?"<NULL>":str2), count)
 #define safe_closehandle(h) do {if (h != INVALID_HANDLE_VALUE) {CloseHandle(h); h = INVALID_HANDLE_VALUE;}} while(0)
-#define safe_sprintf _snprintf
+#define safe_sprintf(dst, count, ...) do {_snprintf(dst, count, __VA_ARGS__); (dst)[(count)-1] = 0; } while(0)
 #define safe_strlen(str) ((((char*)str)==NULL)?0:strlen(str))
 #define safe_strdup _strdup
 #define MF_CHECK(cond) ((cond)?MF_CHECKED:MF_UNCHECKED)
+#define IGNORE_RETVAL(expr) do { (void)(expr); } while(0)
 
 #if defined(_MSC_VER)
 #define safe_vsnprintf(buf, size, format, arg) _vsnprintf_s(buf, size, _TRUNCATE, format, arg)
@@ -125,7 +126,7 @@ enum wcid_state {
  */
 #define dprintf(...) w_printf(false, __VA_ARGS__)
 #define dsprintf(...) w_printf(true, __VA_ARGS__)
-void detect_windows_version(void);
+int detect_windows_version(void);
 void w_printf(bool update_status, const char *format, ...);
 void browse_for_folder(void);
 char* file_dialog(bool save, char* path, char* filename, char* ext, char* ext_desc);
@@ -138,6 +139,7 @@ char* to_valid_filename(char* name, char* ext);
 HWND create_tooltip(HWND hWnd, char* message, int duration);
 void destroy_tooltip(HWND hWnd);
 void destroy_all_tooltips(void);
+void set_title_bar_icon(HWND hDlg);
 
 /*
  * Globals

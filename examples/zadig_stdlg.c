@@ -59,7 +59,7 @@ static LPITEMIDLIST (WINAPI *pSHSimpleIDListFromPath)(PCWSTR pszPath) = NULL;
 static HICON hMessageIcon = (HICON)INVALID_HANDLE_VALUE;
 static char* message_text = NULL;
 static char* message_title = NULL;
-enum windows_version windows_version = WINDOWS_UNSUPPORTED;
+int windows_version = WINDOWS_UNSUPPORTED;
 extern HFONT bold_font;
 extern float fScale;
 static HWND browse_edit;
@@ -76,7 +76,7 @@ char* to_valid_filename(char* name, char* ext)
 	char* ret;
 	wchar_t unauthorized[] = L"\x0001\x0002\x0003\x0004\x0005\x0006\x0007\x0008\x000a"
 		L"\x000b\x000c\x000d\x000e\x000f\x0010\x0011\x0012\x0013\x0014\x0015\x0016\x0017"
-		L"\x0018\x0019\x001a\x001b\x001c\x001d\x001e\x001f\x007f\"*/:<>?\\|";
+		L"\x0018\x0019\x001a\x001b\x001c\x001d\x001e\x001f\x007f\"*/:<>?\\|,";
 	wchar_t to_underscore[] = L" \t";
 	wchar_t *wname, *wext, *wret;
 
@@ -160,30 +160,63 @@ static char err_string[ERR_BUFFER_SIZE];
 /*
  * Detect Windows version
  */
-void detect_windows_version(void)
+int detect_windows_version(void)
 {
-	OSVERSIONINFO os_version;
+	OSVERSIONINFOEXA vi, vi2;
+	unsigned major, minor;
+	ULONGLONG major_equal, minor_equal;
+	BOOL ws;
+	int nWindowsVersion;
 
-	memset(&os_version, 0, sizeof(OSVERSIONINFO));
-	os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-	windows_version = WINDOWS_UNSUPPORTED;
-	if ((GetVersionEx(&os_version) != 0) && (os_version.dwPlatformId == VER_PLATFORM_WIN32_NT)) {
-		if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 0)) {
-			windows_version = WINDOWS_2K;
-		} else if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 1)) {
-			windows_version = WINDOWS_XP;
-		} else if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 2)) {
-			windows_version = WINDOWS_2003_XP64;
-		} else if (os_version.dwMajorVersion == 6) {
-			if (os_version.dwBuildNumber < 7000) {
-				windows_version = WINDOWS_VISTA;
-			} else {
-				windows_version = WINDOWS_7;
+	nWindowsVersion = WINDOWS_UNDEFINED;
+
+	memset(&vi, 0, sizeof(vi));
+	vi.dwOSVersionInfoSize = sizeof(vi);
+	if (!GetVersionExA((OSVERSIONINFOA *)&vi)) {
+		memset(&vi, 0, sizeof(vi));
+		vi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
+		if (!GetVersionExA((OSVERSIONINFOA *)&vi))
+			return nWindowsVersion;
+	}
+
+	if (vi.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+
+		if (vi.dwMajorVersion > 6 || (vi.dwMajorVersion == 6 && vi.dwMinorVersion >= 2)) {
+			// Starting with Windows 8.1 Preview, GetVersionEx() does no longer report the actual OS version
+			// See: http://msdn.microsoft.com/en-us/library/windows/desktop/dn302074.aspx
+
+			major_equal = VerSetConditionMask(0, VER_MAJORVERSION, VER_EQUAL);
+			for (major = vi.dwMajorVersion; major <= 9; major++) {
+				memset(&vi2, 0, sizeof(vi2));
+				vi2.dwOSVersionInfoSize = sizeof(vi2); vi2.dwMajorVersion = major;
+				if (!VerifyVersionInfoA(&vi2, VER_MAJORVERSION, major_equal))
+					continue;
+				if (vi.dwMajorVersion < major) {
+					vi.dwMajorVersion = major; vi.dwMinorVersion = 0;
+				}
+
+				minor_equal = VerSetConditionMask(0, VER_MINORVERSION, VER_EQUAL);
+				for (minor = vi.dwMinorVersion; minor <= 9; minor++) {
+					memset(&vi2, 0, sizeof(vi2)); vi2.dwOSVersionInfoSize = sizeof(vi2);
+					vi2.dwMinorVersion = minor;
+					if (!VerifyVersionInfoA(&vi2, VER_MINORVERSION, minor_equal))
+						continue;
+					vi.dwMinorVersion = minor;
+					break;
+				}
+
+				break;
 			}
-		} else if (os_version.dwMajorVersion >= 8) {
-			windows_version = WINDOWS_8;
+		}
+
+		if (vi.dwMajorVersion <= 0xf && vi.dwMinorVersion <= 0xf) {
+			ws = (vi.wProductType <= VER_NT_WORKSTATION);
+			nWindowsVersion = vi.dwMajorVersion << 4 | vi.dwMinorVersion;
+			if (nWindowsVersion < 0x51)
+				nWindowsVersion = WINDOWS_UNSUPPORTED;;
 		}
 	}
+	return nWindowsVersion;
 }
 
 /*
@@ -575,6 +608,8 @@ fallback:
 	// Set the file extension filters
 	ext_strlen = strlen(ext_desc) + 2*strlen(ext) + sizeof(" (*.)\0*.\0All Files (*.*)\0*.*\0\0");
 	ext_string = (char*)malloc(ext_strlen);
+	if (ext_string == NULL)
+		return NULL;
 	safe_sprintf(ext_string, ext_strlen, "%s (*.%s)\r*.%s\rAll Files (*.*)\r*.*\r\0", ext_desc, ext, ext);
 	// Microsoft could really have picked a better delimiter!
 	for (i=0; i<ext_strlen; i++) {
@@ -915,4 +950,42 @@ void destroy_all_tooltips(void)
 		DestroyWindow(ttlist[i].hTip);
 		safe_free(ttlist[i].wstring);
 	}
+}
+
+void set_title_bar_icon(HWND hDlg)
+{
+	HDC hDC;
+	int i16, s16, s32;
+	HICON hSmallIcon, hBigIcon;
+
+	// High DPI scaling
+	i16 = GetSystemMetrics(SM_CXSMICON);
+	hDC = GetDC(hDlg);
+	fScale = GetDeviceCaps(hDC, LOGPIXELSX) / 96.0f;
+	ReleaseDC(hDlg, hDC);
+	// Adjust icon size lookup
+	s16 = i16;
+	s32 = (int)(32.0f*fScale);
+	if (s16 >= 54)
+		s16 = 64;
+	else if (s16 >= 40)
+		s16 = 48;
+	else if (s16 >= 28)
+		s16 = 32;
+	else if (s16 >= 20)
+		s16 = 24;
+	if (s32 >= 54)
+		s32 = 64;
+	else if (s32 >= 40)
+		s32 = 48;
+	else if (s32 >= 28)
+		s32 = 32;
+	else if (s32 >= 20)
+		s32 = 24;
+
+	// Create the title bar icon
+	hSmallIcon = (HICON)LoadImage(main_instance, MAKEINTRESOURCE(IDI_ZADIG), IMAGE_ICON, s16, s16, 0);
+	SendMessage (hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hSmallIcon);
+	hBigIcon = (HICON)LoadImage(main_instance, MAKEINTRESOURCE(IDI_ZADIG), IMAGE_ICON, s32, s32, 0);
+	SendMessage (hDlg, WM_SETICON, ICON_BIG, (LPARAM)hBigIcon);
 }

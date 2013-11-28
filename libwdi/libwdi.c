@@ -1,6 +1,6 @@
 /*
  * Library for USB automated driver installation
- * Copyright (c) 2010-2011 Pete Batard <pbatard@gmail.com>
+ * Copyright (c) 2010-2013 Pete Batard <pete@akeo.ie>
  * Parts of the code from libusb by Daniel Drake, Johannes Erdfelt et al.
  * For more info, please visit http://libwdi.akeo.ie
  *
@@ -142,7 +142,7 @@ static const char* cat_template[WDI_NB_DRIVERS-1] = {"winusb.cat.in", "libusb0.c
 static const char* ms_compat_id[WDI_NB_DRIVERS-1] = {"MS_COMP_WINUSB", "MS_COMP_LIBUSB0", "MS_COMP_LIBUSBK"};
 // for 64 bit platforms detection
 static BOOL (__stdcall *pIsWow64Process)(HANDLE, PBOOL) = NULL;
-static enum windows_version windows_version = WINDOWS_UNDEFINED;
+static int windows_version = WINDOWS_UNDEFINED;
 
 /*
  * For the retrieval of the device description on Windows 7
@@ -213,34 +213,64 @@ static int64_t __inline unixtime_to_msfiletime(time_t t)
 }
 
 // Detect Windows version
-#define GET_WINDOWS_VERSION do{ if (windows_version == WINDOWS_UNDEFINED) detect_version(); } while(0)
-static void detect_version(void)
+#define GET_WINDOWS_VERSION do{ if (windows_version == WINDOWS_UNDEFINED) windows_version = detect_version(); } while(0)
+static int detect_version(void)
 {
-	OSVERSIONINFO os_version;
+	OSVERSIONINFOEXA vi, vi2;
+	unsigned major, minor;
+	ULONGLONG major_equal, minor_equal;
+	BOOL ws;
+	int nWindowsVersion;
 
-	memset(&os_version, 0, sizeof(OSVERSIONINFO));
-	os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-	windows_version = WINDOWS_UNSUPPORTED;
-	if ((GetVersionEx(&os_version) != 0) && (os_version.dwPlatformId == VER_PLATFORM_WIN32_NT)) {
-		if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 0)) {
-			windows_version = WINDOWS_2K;
-			wdi_info("Windows 2000");
-		} else if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 1)) {
-			windows_version = WINDOWS_XP;
-			wdi_info("Windows XP");
-		} else if ((os_version.dwMajorVersion == 5) && (os_version.dwMinorVersion == 2)) {
-			windows_version = WINDOWS_2003_XP64;
-			wdi_info("Windows 2003 or Windows XP 64 bit");
-		} else if (os_version.dwMajorVersion >= 6) {
-			if (os_version.dwBuildNumber < 7000) {
-				windows_version = WINDOWS_VISTA;
-				wdi_info("Windows Vista");
-			} else {
-				windows_version = WINDOWS_7;
-				wdi_info("Windows 7");
+	nWindowsVersion = WINDOWS_UNDEFINED;
+
+	memset(&vi, 0, sizeof(vi));
+	vi.dwOSVersionInfoSize = sizeof(vi);
+	if (!GetVersionExA((OSVERSIONINFOA *)&vi)) {
+		memset(&vi, 0, sizeof(vi));
+		vi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
+		if (!GetVersionExA((OSVERSIONINFOA *)&vi))
+			return nWindowsVersion;
+	}
+
+	if (vi.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+
+		if (vi.dwMajorVersion > 6 || (vi.dwMajorVersion == 6 && vi.dwMinorVersion >= 2)) {
+			// Starting with Windows 8.1 Preview, GetVersionEx() does no longer report the actual OS version
+			// See: http://msdn.microsoft.com/en-us/library/windows/desktop/dn302074.aspx
+
+			major_equal = VerSetConditionMask(0, VER_MAJORVERSION, VER_EQUAL);
+			for (major = vi.dwMajorVersion; major <= 9; major++) {
+				memset(&vi2, 0, sizeof(vi2));
+				vi2.dwOSVersionInfoSize = sizeof(vi2); vi2.dwMajorVersion = major;
+				if (!VerifyVersionInfoA(&vi2, VER_MAJORVERSION, major_equal))
+					continue;
+				if (vi.dwMajorVersion < major) {
+					vi.dwMajorVersion = major; vi.dwMinorVersion = 0;
+				}
+
+				minor_equal = VerSetConditionMask(0, VER_MINORVERSION, VER_EQUAL);
+				for (minor = vi.dwMinorVersion; minor <= 9; minor++) {
+					memset(&vi2, 0, sizeof(vi2)); vi2.dwOSVersionInfoSize = sizeof(vi2);
+					vi2.dwMinorVersion = minor;
+					if (!VerifyVersionInfoA(&vi2, VER_MINORVERSION, minor_equal))
+						continue;
+					vi.dwMinorVersion = minor;
+					break;
+				}
+
+				break;
 			}
 		}
+
+		if (vi.dwMajorVersion <= 0xf && vi.dwMinorVersion <= 0xf) {
+			ws = (vi.wProductType <= VER_NT_WORKSTATION);
+			nWindowsVersion = vi.dwMajorVersion << 4 | vi.dwMinorVersion;
+			if (nWindowsVersion < 0x51)
+				nWindowsVersion = WINDOWS_UNSUPPORTED;;
+		}
 	}
+	return nWindowsVersion;
 }
 
 /*
@@ -587,8 +617,8 @@ bool LIBWDI_API wdi_is_driver_supported(int driver_type, VS_FIXEDFILEINFO* drive
 #if defined(DDK_DIR)
 		// WinUSB is not supported on Win2k/2k3
 		GET_WINDOWS_VERSION;
-		if ( (windows_version == WINDOWS_2K)
-		  || (windows_version == WINDOWS_2003_XP64) ) {
+		if ( (windows_version < WINDOWS_XP)
+		  || (windows_version == WINDOWS_2003) ) {
 			return false;
 		}
 		return true;
@@ -759,7 +789,7 @@ int LIBWDI_API wdi_create_list(struct wdi_device_info** list,
 	char strbuf[STR_BUFFER_SIZE], drv_version[] = "xxxxx.xxxxx.xxxxx.xxxxx";
 	wchar_t desc[MAX_DESC_LENGTH];
 	struct wdi_device_info *start = NULL, *cur = NULL, *device_info = NULL;
-	const char* usbhub_name[] = {"usbhub", "usbhub3", "nusb3hub", "rusb3hub", "flxhcih", "tihub3", "etronhub3", "viahub3", "asmthub3", "iusb3hub"};
+	const char* usbhub_name[] = {"usbhub", "usbhub3", "nusb3hub", "rusb3hub", "flxhcih", "tihub3", "etronhub3", "viahub3", "asmthub3", "iusb3hub", "vusb3hub"};
 	const char usbccgp_name[] = "usbccgp";
 	bool is_hub, is_composite_parent, has_vid;
 
@@ -850,7 +880,7 @@ int LIBWDI_API wdi_create_list(struct wdi_device_info** list,
 		// We assume that the first one (REG_MULTI_SZ) is the one we are interested in
 		device_info->hardware_id = safe_strdup(strbuf);
 
-		// Retreive the first Compatible ID
+		// Retrieve the first Compatible ID
 		if (SetupDiGetDeviceRegistryPropertyA(dev_info, &dev_info_data, SPDRP_COMPATIBLEIDS,
 			&reg_type, (BYTE*)strbuf, STR_BUFFER_SIZE, &size)) {
 			wdi_dbg("Compatible ID: %s", strbuf);
@@ -1237,7 +1267,7 @@ int LIBWDI_API wdi_prepare_driver(struct wdi_device_info* device_info, char* pat
 	} else if ((options != NULL) && (options->device_guid != NULL)) {
 		strguid = options->device_guid;
 	} else {
-		CoCreateGuid(&guid);
+		IGNORE_RETVAL(CoCreateGuid(&guid));
 		strguid = guid_to_string(guid);
 	}
 	static_sprintf(inf_entities[DEVICE_INTERFACE_GUID].replace, "%s", strguid);
@@ -1302,7 +1332,7 @@ int LIBWDI_API wdi_prepare_driver(struct wdi_device_info* device_info, char* pat
 		wdi_err("could not tokenize inf file (%d)", inf_file_size);
 		MUTEX_RETURN WDI_ERROR_ACCESS;
 	}
-	wdi_info("succesfully created '%s'", inf_path);
+	wdi_info("successfully created '%s'", inf_path);
 
 	GET_WINDOWS_VERSION;
 	INIT_VISTA_SHELL32;
